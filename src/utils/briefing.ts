@@ -30,11 +30,29 @@ function formatTime(iso?: string): string {
   }
 }
 
+function formatDate(iso?: string): string {
+  if (!iso) return '-';
+  try {
+    return new Date(iso).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+  } catch {
+    return '-';
+  }
+}
+
 function summarizeHits(item: SentimentItem): string {
   const uniqueTypes = [...new Set(item.matchHits.map((h) => matchTypeLabels[h.type]))];
   const uniqueKeywords = [...new Set(item.matchHits.map((h) => h.keyword))];
   if (uniqueTypes.length === 0) return '-';
   return `${uniqueTypes.join('、')}：${uniqueKeywords.slice(0, 3).join('、')}`;
+}
+
+function summarizeAssignment(item: SentimentItem): string {
+  if (!item.assignment || !item.assignment.department) return '';
+  const parts = [`责任部门：${item.assignment.department}`];
+  if (item.assignment.assignee) parts.push(`责任人：${item.assignment.assignee}`);
+  if (item.assignment.deadline) parts.push(`截止：${formatDate(item.assignment.deadline)}`);
+  if (item.assignment.note) parts.push(`备注：${item.assignment.note}`);
+  return `     [会议安排] ${parts.join(' | ')}\n`;
 }
 
 interface BriefingOptions {
@@ -59,9 +77,10 @@ export function generateBriefing({
   const verified = sentiments.filter((s) => s.status === 'verified');
   const replied = sentiments.filter((s) => s.status === 'replied');
   const ignored = sentiments.filter((s) => s.status === 'ignored');
+  const completed = replied.length + ignored.length;
 
   const total = sentiments.length;
-  const disposalRate = total > 0 ? Math.round(((replied.length + verified.length + ignored.length) / total) * 100) : 0;
+  const disposalRate = total > 0 ? Math.round((completed / total) * 100) : 0;
 
   let content = '';
   content += `【${companyName}】舆情早会简报（${periodLabels[period]}）\n`;
@@ -77,7 +96,8 @@ export function generateBriefing({
     content += `  ⚠️ 监管敏感：${regulatory.length} 条（需优先关注）\n`;
     content += `  📈 股价联动：${stock.length} 条（影响开盘）\n`;
     content += `  ❓ 待处置：${pending.length} 条\n`;
-    content += `  🔍 待核实：${verified.length} 条\n\n`;
+    content += `  🔍 待核实：${verified.length} 条\n`;
+    content += `  ✅ 已完成：${completed} 条（已回复${replied.length}+无需处理${ignored.length}）\n\n`;
 
     if (regulatory.length > 0) {
       content += `━━━ 二、监管敏感（必须关注）━━━\n`;
@@ -85,6 +105,7 @@ export function generateBriefing({
         content += `  ${i + 1}. 【${statusLabels[s.status]}】${s.title}\n`;
         content += `     来源：${s.source} | 热度：${s.heat} | ${formatTime(s.publishTime)}\n`;
         content += `     命中：${summarizeHits(s)}\n`;
+        content += summarizeAssignment(s);
         if (s.responseNote) content += `     口径：${s.responseNote}\n`;
         content += `\n`;
       });
@@ -95,6 +116,7 @@ export function generateBriefing({
       stock.forEach((s, i) => {
         content += `  ${i + 1}. 【${statusLabels[s.status]}】${s.title}\n`;
         content += `     来源：${s.source} | 热度：${s.heat}\n`;
+        content += summarizeAssignment(s);
         if (s.responseNote) content += `     口径：${s.responseNote}\n`;
         content += `\n`;
       });
@@ -104,7 +126,9 @@ export function generateBriefing({
       content += `━━━ 四、待核实事项（需跟进）━━━\n`;
       verified.forEach((s, i) => {
         content += `  ${i + 1}. ${s.title}\n`;
-        content += `     核实进度：${s.responseNote || '暂无记录'} | 标记时间：${formatTime(s.responseTime)}\n\n`;
+        content += `     核实进度：${s.responseNote || '暂无记录'} | 标记时间：${formatTime(s.responseTime)}\n`;
+        content += summarizeAssignment(s);
+        content += `\n`;
       });
     }
 
@@ -120,9 +144,9 @@ export function generateBriefing({
     content += `本时段重点：投资者提问回复 + 上午舆情变化跟踪\n\n`;
 
     content += `一、上午处置进度\n`;
-    content += `  已处置：${replied.length + ignored.length} / ${total}（${disposalRate}%）\n`;
-    content += `  待回复投资者提问：${investor.filter((s) => s.status === 'pending').length} 条\n`;
-    content += `  待核实：${verified.length} 条\n\n`;
+    content += `  已完成：${completed} / ${total}（${disposalRate}%）【已回复${replied.length} + 无需处理${ignored.length}】\n`;
+    content += `  🔍 待核实：${verified.length} 条\n`;
+    content += `  ❓ 待回复投资者提问：${investor.filter((s) => s.status === 'pending').length} 条\n\n`;
 
     if (investor.length > 0) {
       content += `━━━ 二、投资者集中提问（需重点回复）━━━\n`;
@@ -130,6 +154,7 @@ export function generateBriefing({
       sortedInvestor.forEach((s, i) => {
         content += `  ${i + 1}. 【${statusLabels[s.status]}】${s.title}\n`;
         content += `     平台：${s.source} | 热度：${s.heat} | 命中：${summarizeHits(s)}\n`;
+        content += summarizeAssignment(s);
         if (s.status === 'replied') {
           content += `     ✅ 回复口径：${s.responseNote}\n`;
         } else {
@@ -145,6 +170,7 @@ export function generateBriefing({
         .filter((s) => s.status === 'pending')
         .forEach((s, i) => {
           content += `  ${i + 1}. ${s.title}\n`;
+          content += summarizeAssignment(s);
           content += `     建议：下午安排法务/财务部门专项讨论\n\n`;
         });
     }
@@ -154,7 +180,9 @@ export function generateBriefing({
       stock
         .filter((s) => s.status === 'pending')
         .forEach((s, i) => {
-          content += `  ${i + 1}. ${s.title}\n     关注下午盘面变化\n\n`;
+          content += `  ${i + 1}. ${s.title}\n`;
+          content += summarizeAssignment(s);
+          content += `     关注下午盘面变化\n\n`;
         });
     }
 
@@ -171,10 +199,10 @@ export function generateBriefing({
     content += `一、全天处置总结\n`;
     content += `  舆情总数：${total} 条\n`;
     content += `  ✅ 已回复：${replied.length} 条\n`;
-    content += `  🔍 待核实：${verified.length} 条\n`;
     content += `  —  无需处理：${ignored.length} 条\n`;
-    content += `  ⚠️ 待处置：${pending.length} 条\n`;
-    content += `  📊 今日处置率：${disposalRate}%\n\n`;
+    content += `  🔍 待核实：${verified.length} 条\n`;
+    content += `  ❓ 待处置：${pending.length} 条\n`;
+    content += `  📊 今日处置率（含已回复+无需处理）：${disposalRate}%\n\n`;
 
     content += `━━━ 二、已处理事项复盘 ━━━\n`;
     const done = [...replied, ...ignored];
@@ -195,24 +223,27 @@ export function generateBriefing({
     if (pending.length > 0 || verified.length > 0) {
       content += `━━━ 三、未完成事项（明日跟进）━━━\n`;
       if (verified.length > 0) {
-        content += `  【待核实 ${verified.length} 条】\n`;
+        content += `  【待核实 ${verified.length} 条 — 需给出结论】\n`;
         verified.forEach((s, i) => {
           content += `    ${i + 1}. ${s.title}\n`;
-          content += `       当前状态：${s.responseNote || '核实中'} | 建议：明日上午前给出结论\n`;
+          content += `       当前状态：${s.responseNote || '核实中'}\n`;
+          content += summarizeAssignment(s).replace(/^     /, '       ');
+          content += `       建议：明日上午前给出结论\n`;
         });
         content += `\n`;
       }
       if (pending.length > 0) {
-        content += `  【待处置 ${pending.length} 条】\n`;
+        content += `  【待处置 ${pending.length} 条 — 需分配处理】\n`;
         pending
           .sort((a, b) => b.heat - a.heat)
-          .slice(0, 5)
+          .slice(0, 8)
           .forEach((s, i) => {
             content += `    ${i + 1}. 【${levelLabels[s.level]}】${s.title}\n`;
             content += `       热度：${s.heat} | 来源：${s.source}\n`;
+            content += summarizeAssignment(s).replace(/^     /, '       ');
           });
-        if (pending.length > 5) {
-          content += `    ...其余 ${pending.length - 5} 条请查看盯盘页\n`;
+        if (pending.length > 8) {
+          content += `    ...其余 ${pending.length - 8} 条请查看盯盘页\n`;
         }
         content += `\n`;
       }
@@ -232,7 +263,7 @@ export function generateBriefing({
     content += `\n`;
 
     content += `━━━ 五、次日关注提示 ━━━\n`;
-    content += `  • 待核实事项请在明日开盘前核实完毕\n`;
+    if (verified.length > 0) content += `  • 待核实 ${verified.length} 条请在明日开盘前核实完毕\n`;
     content += `  • 关注今晚外盘、政策新闻是否涉及公司业务\n`;
     content += `  • 已回复口径整理归档，作为后续回复参考\n`;
     if (pending.length > 0) content += `  • 明日开盘前重点回看 ${pending.length} 条待处置舆情\n`;

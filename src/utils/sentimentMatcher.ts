@@ -7,6 +7,7 @@ import type {
   MatchType,
   DisposalStatus,
   DisposalRecord,
+  MeetingAssignment,
 } from '../types';
 
 const pickRandom = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
@@ -78,9 +79,11 @@ interface PersistedState {
 export function matchSentiments(
   rawPool: RawSentimentItem[],
   config: CompanyConfig,
-  persistedStates: Record<string, PersistedState> = {}
+  persistedStates: Record<string, PersistedState> = {},
+  persistedAssignments: Record<string, MeetingAssignment> = {}
 ): SentimentItem[] {
   const matched: SentimentItem[] = [];
+  const replaceAll = (str: string, search: string, replace: string) => str.split(search).join(replace);
 
   for (const raw of rawPool) {
     if (!config.dataSources.includes(raw.sourceType)) {
@@ -90,6 +93,7 @@ export function matchSentiments(
     const hits: MatchHit[] = [];
     let processedTitle = raw.title;
     let processedSummary = raw.summary;
+    let skipItem = false;
 
     const checkKeyword = (
       text: string,
@@ -108,8 +112,6 @@ export function matchSentiments(
       }
       return false;
     };
-
-    const replaceAll = (str: string, search: string, replace: string) => str.split(search).join(replace);
 
     const titleContainsCompany = checkKeyword(processedTitle, config.companyName, 'companyName', '{COMPANY}');
     const summaryContainsCompany = checkKeyword(processedSummary, config.companyName, 'companyName', '{COMPANY}');
@@ -132,39 +134,43 @@ export function matchSentiments(
       processedSummary = replaceAll(processedSummary, '{INDUSTRY}', config.industry);
     }
 
-    let productUsed = '';
-    if (processedTitle.includes('{PRODUCT}') || processedSummary.includes('{PRODUCT}')) {
-      const product = pickRandom(config.coreProducts);
-      productUsed = product;
-      hits.push({ type: 'coreProduct', keyword: product, matchedText: product });
-      processedTitle = replaceAll(processedTitle, '{PRODUCT}', product);
-      processedSummary = replaceAll(processedSummary, '{PRODUCT}', product);
-    }
-
-    let execUsed = '';
-    if (processedTitle.includes('{EXECUTIVE}') || processedSummary.includes('{EXECUTIVE}')) {
-      const exec = pickRandom(config.executives);
-      execUsed = exec;
-      hits.push({ type: 'executive', keyword: exec, matchedText: exec });
-      processedTitle = replaceAll(processedTitle, '{EXECUTIVE}', exec);
-      processedSummary = replaceAll(processedSummary, '{EXECUTIVE}', exec);
-    }
-
-    let misspellUsed = '';
-    if (processedTitle.includes('{MISSPELL}') || processedSummary.includes('{MISSPELL}')) {
-      if (config.commonMisspellings.length > 0) {
-        const misspell = pickRandom(config.commonMisspellings);
-        misspellUsed = misspell;
-        hits.push({ type: 'misspelling', keyword: misspell, matchedText: misspell });
-        processedTitle = replaceAll(processedTitle, '{MISSPELL}', misspell);
-        processedSummary = replaceAll(processedSummary, '{MISSPELL}', misspell);
+    const needsProduct = processedTitle.includes('{PRODUCT}') || processedSummary.includes('{PRODUCT}');
+    if (needsProduct) {
+      if (config.coreProducts.length === 0) {
+        skipItem = true;
       } else {
-        processedTitle = replaceAll(processedTitle, '{MISSPELL}', '某混淆名称');
-        processedSummary = replaceAll(processedSummary, '{MISSPELL}', '某混淆名称');
+        const product = pickRandom(config.coreProducts);
+        hits.push({ type: 'coreProduct', keyword: product, matchedText: product });
+        processedTitle = replaceAll(processedTitle, '{PRODUCT}', product);
+        processedSummary = replaceAll(processedSummary, '{PRODUCT}', product);
       }
     }
 
-    if (hits.length === 0) {
+    const needsExecutive = processedTitle.includes('{EXECUTIVE}') || processedSummary.includes('{EXECUTIVE}');
+    if (needsExecutive) {
+      if (config.executives.length === 0) {
+        skipItem = true;
+      } else {
+        const exec = pickRandom(config.executives);
+        hits.push({ type: 'executive', keyword: exec, matchedText: exec });
+        processedTitle = replaceAll(processedTitle, '{EXECUTIVE}', exec);
+        processedSummary = replaceAll(processedSummary, '{EXECUTIVE}', exec);
+      }
+    }
+
+    const needsMisspell = processedTitle.includes('{MISSPELL}') || processedSummary.includes('{MISSPELL}');
+    if (needsMisspell) {
+      if (config.commonMisspellings.length === 0) {
+        skipItem = true;
+      } else {
+        const misspell = pickRandom(config.commonMisspellings);
+        hits.push({ type: 'misspelling', keyword: misspell, matchedText: misspell });
+        processedTitle = replaceAll(processedTitle, '{MISSPELL}', misspell);
+        processedSummary = replaceAll(processedSummary, '{MISSPELL}', misspell);
+      }
+    }
+
+    if (skipItem || hits.length === 0) {
       continue;
     }
 
@@ -184,6 +190,7 @@ export function matchSentiments(
 
     const id = raw.id;
     const persisted = persistedStates[id];
+    const assignment = persistedAssignments[id];
 
     matched.push({
       id,
@@ -201,6 +208,7 @@ export function matchSentiments(
       responseNote: persisted?.responseNote,
       responseTime: persisted?.responseTime,
       disposalHistory: persisted?.disposalHistory ?? [],
+      assignment,
     });
   }
 

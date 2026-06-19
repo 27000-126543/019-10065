@@ -8,11 +8,15 @@ import {
   FileText,
   Download,
   RefreshCw,
+  CheckCircle,
+  AlertCircle,
+  Target,
 } from 'lucide-react';
 import { useSentimentStore, useSentiments } from '@/store/useSentimentStore';
 import { SentimentCard } from '@/components/SentimentCard/SentimentCard';
-import type { SentimentLevel, DisposalStatus, SourceType } from '@/types';
+import type { SentimentLevel, DisposalStatus, SourceType, MatchType } from '@/types';
 import { sourceTypeLabels } from '@/data/mockSentiments';
+import { matchTypeLabels } from '@/types';
 import { exportToCSV } from '@/utils/exportCSV';
 
 type TabType = 'all' | SentimentLevel;
@@ -26,6 +30,7 @@ export function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sourceFilter, setSourceFilter] = useState<SourceType | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<DisposalStatus | 'all'>('all');
+  const [matchTypeFilter, setMatchTypeFilter] = useState<MatchType | 'all'>('all');
 
   const stats = useMemo(() => {
     const all = allSentiments;
@@ -35,7 +40,9 @@ export function DashboardPage() {
       stock: all.filter((s) => s.level === 'stock').length,
       investor: all.filter((s) => s.level === 'investor').length,
       general: all.filter((s) => s.level === 'general').length,
-      replied: all.filter((s) => s.status === 'replied' || s.status === 'verified').length,
+      replied: all.filter((s) => s.status === 'replied').length,
+      ignored: all.filter((s) => s.status === 'ignored').length,
+      verified: all.filter((s) => s.status === 'verified').length,
       pending: all.filter((s) => s.status === 'pending').length,
     };
   }, [allSentiments]);
@@ -46,6 +53,14 @@ export function DashboardPage() {
     { key: 'stock', label: '股价联动', count: stats.stock, color: 'text-orange-600' },
     { key: 'investor', label: '投资者提问', count: stats.investor, color: 'text-blue-600' },
     { key: 'general', label: '普通讨论', count: stats.general, color: 'text-slate-500' },
+  ];
+
+  const matchTypeOptions: { key: MatchType | 'all'; label: string }[] = [
+    { key: 'all', label: '全部命中类型' },
+    ...Object.entries(matchTypeLabels).map(([key, label]) => ({
+      key: key as MatchType,
+      label: `命中：${label}`,
+    })),
   ];
 
   const filteredSentiments = useMemo(() => {
@@ -61,6 +76,10 @@ export function DashboardPage() {
 
     if (sourceFilter !== 'all') {
       result = result.filter((s) => s.sourceType === sourceFilter);
+    }
+
+    if (matchTypeFilter !== 'all') {
+      result = result.filter((s) => s.matchHits.some((h) => h.type === matchTypeFilter));
     }
 
     if (searchQuery) {
@@ -80,7 +99,7 @@ export function DashboardPage() {
       }
       return b.heat - a.heat;
     });
-  }, [allSentiments, activeTab, searchQuery, sourceFilter, statusFilter]);
+  }, [allSentiments, activeTab, searchQuery, sourceFilter, statusFilter, matchTypeFilter]);
 
   const handleAction = (id: string, status: DisposalStatus, note?: string) => {
     updateSentimentStatus(id, status, note);
@@ -108,18 +127,18 @@ export function DashboardPage() {
       bg: 'bg-red-50',
     },
     {
-      label: '已处置',
-      value: stats.replied,
-      icon: BarChart3,
-      color: 'text-green-600',
-      bg: 'bg-green-50',
-    },
-    {
-      label: '投资者提问',
-      value: stats.investor,
-      icon: MessageSquare,
+      label: '待核实',
+      value: stats.verified,
+      icon: AlertCircle,
       color: 'text-purple-600',
       bg: 'bg-purple-50',
+    },
+    {
+      label: '已完成',
+      value: stats.replied + stats.ignored,
+      icon: CheckCircle,
+      color: 'text-green-600',
+      bg: 'bg-green-50',
     },
   ];
 
@@ -206,8 +225,8 @@ export function DashboardPage() {
         </div>
 
         <div className="p-4 border-b border-slate-100 bg-slate-50/50">
-          <div className="flex items-center gap-4">
-            <div className="flex-1 relative">
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex-1 relative min-w-[240px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
                 type="text"
@@ -217,8 +236,20 @@ export function DashboardPage() {
                 className="w-full pl-9 pr-4 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Filter className="w-4 h-4 text-slate-400" />
+              <select
+                value={matchTypeFilter}
+                onChange={(e) => setMatchTypeFilter(e.target.value as MatchType | 'all')}
+                className="text-sm px-3 py-2 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                title="按命中类型筛选"
+              >
+                {matchTypeOptions.map((opt) => (
+                  <option key={opt.key} value={opt.key}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
               <select
                 value={sourceFilter}
                 onChange={(e) => setSourceFilter(e.target.value as SourceType | 'all')}
@@ -236,8 +267,8 @@ export function DashboardPage() {
               >
                 <option value="all">全部状态</option>
                 <option value="pending">待处置</option>
-                <option value="replied">已回复</option>
                 <option value="verified">待核实</option>
+                <option value="replied">已回复</option>
                 <option value="ignored">无需处理</option>
               </select>
             </div>
@@ -246,6 +277,12 @@ export function DashboardPage() {
             <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-200">
               <p className="text-xs text-slate-500">
                 共筛选出 <span className="font-medium text-slate-700">{filteredSentiments.length}</span> 条舆情
+                {matchTypeFilter !== 'all' && (
+                  <span className="ml-2 inline-flex items-center gap-1 text-blue-600">
+                    <Target className="w-3 h-3" />
+                    命中类型：{matchTypeLabels[matchTypeFilter]}
+                  </span>
+                )}
               </p>
             </div>
           )}

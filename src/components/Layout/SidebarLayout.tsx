@@ -9,7 +9,7 @@ export function SidebarLayout({ children }: { children: React.ReactNode }) {
   const config = useSentimentStore((s) => s.config);
 
   const pendingCount = useMemo(() => {
-    return sentiments.filter((s) => s.status === 'pending').length;
+    return sentiments.filter((s) => s.status === 'pending' || s.status === 'verified').length;
   }, [sentiments]);
 
   const navItems = [

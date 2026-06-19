@@ -19,6 +19,15 @@ export interface DisposalRecord {
   timestamp: string;
 }
 
+export interface MeetingAssignment {
+  department: string;
+  deadline?: string;
+  assignee?: string;
+  note?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CompanyConfig {
   companyName: string;
   stockCode: string;
@@ -57,6 +66,7 @@ export interface SentimentItem {
   responseNote?: string;
   responseTime?: string;
   disposalHistory: DisposalRecord[];
+  assignment?: MeetingAssignment;
 }
 
 export interface Briefing {

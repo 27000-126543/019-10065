@@ -2,6 +2,7 @@ const STORAGE_KEYS = {
   config: 'sentiment_dashboard_config',
   sentiments: 'sentiment_dashboard_items',
   briefings: 'sentiment_dashboard_briefings',
+  assignments: 'sentiment_dashboard_assignments',
 };
 
 export function getFromStorage<T>(key: string, defaultValue: T): T {
@@ -33,5 +34,8 @@ export const storage = {
   },
   get briefings() {
     return STORAGE_KEYS.briefings;
+  },
+  get assignments() {
+    return STORAGE_KEYS.assignments;
   },
 };

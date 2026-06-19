@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Clock, ExternalLink, MessageSquare, ChevronDown, ChevronUp, History, User } from 'lucide-react';
+import { Clock, ExternalLink, MessageSquare, ChevronDown, ChevronUp, History, User, Calendar, Users, Building2 } from 'lucide-react';
 import type { SentimentItem, DisposalStatus } from '@/types';
 import { LevelBadge } from '@/components/StatusBadge/LevelBadge';
 import { StatusBadge } from '@/components/StatusBadge/StatusBadge';
@@ -146,6 +146,35 @@ export function SentimentCard({ item, onAction, showActions = false }: Sentiment
                       {reason}
                     </span>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {item.assignment && item.assignment.department && (
+              <div className="p-3 bg-blue-50 rounded-md border border-blue-100">
+                <p className="text-xs font-medium text-blue-700 mb-2">📋 会议安排</p>
+                <div className="space-y-1 text-xs text-blue-600">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <Building2 className="w-3 h-3" />
+                    <span>责任部门：{item.assignment.department}</span>
+                  </div>
+                  {item.assignment.assignee && (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <Users className="w-3 h-3" />
+                      <span>责任人：{item.assignment.assignee}</span>
+                    </div>
+                  )}
+                  {item.assignment.deadline && (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <Calendar className="w-3 h-3" />
+                      <span>截止时间：{formatFullTime(item.assignment.deadline)}</span>
+                    </div>
+                  )}
+                  {item.assignment.note && (
+                    <div className="pt-1 mt-1 border-t border-blue-100 text-blue-700/80">
+                      备注：{item.assignment.note}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
