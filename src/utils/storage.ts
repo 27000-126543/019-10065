@@ -3,6 +3,8 @@ const STORAGE_KEYS = {
   sentiments: 'sentiment_dashboard_items',
   briefings: 'sentiment_dashboard_briefings',
   assignments: 'sentiment_dashboard_assignments',
+  templates: 'sentiment_dashboard_templates',
+  periodNotes: 'sentiment_dashboard_period_notes',
 };
 
 export function getFromStorage<T>(key: string, defaultValue: T): T {

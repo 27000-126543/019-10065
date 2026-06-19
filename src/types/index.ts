@@ -28,6 +28,27 @@ export interface MeetingAssignment {
   updatedAt: string;
 }
 
+export interface ResponseTemplate {
+  id: string;
+  title: string;
+  content: string;
+  level?: SentimentLevel;
+  sourceType?: SourceType;
+  matchType?: MatchType;
+  tags: string[];
+  usedCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PeriodNote {
+  period: 'morning' | 'noon' | 'close';
+  meetingConclusion?: string;
+  internalNote?: string;
+  actionItems?: string;
+  updatedAt: string;
+}
+
 export interface CompanyConfig {
   companyName: string;
   stockCode: string;
