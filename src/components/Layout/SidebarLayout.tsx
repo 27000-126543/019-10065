@@ -1,11 +1,11 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { LayoutDashboard, FileCheck, Settings, Bell, TrendingUp } from 'lucide-react';
-import { useSentimentStore } from '@/store/useSentimentStore';
+import { useSentimentStore, useSentiments } from '@/store/useSentimentStore';
 import { useMemo } from 'react';
 
 export function SidebarLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
-  const sentiments = useSentimentStore((s) => s.sentiments);
+  const sentiments = useSentiments();
   const config = useSentimentStore((s) => s.config);
 
   const pendingCount = useMemo(() => {

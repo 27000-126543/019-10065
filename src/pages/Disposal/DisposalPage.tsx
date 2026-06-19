@@ -12,23 +12,30 @@ import {
   Moon,
   Check,
   RefreshCw,
+  Search,
+  Filter,
 } from 'lucide-react';
-import { useSentimentStore } from '@/store/useSentimentStore';
+import { useSentimentStore, useSentiments } from '@/store/useSentimentStore';
 import { SentimentCard } from '@/components/SentimentCard/SentimentCard';
 import { generateBriefing } from '@/utils/briefing';
-import type { DisposalStatus } from '@/types';
+import type { DisposalStatus, SentimentLevel, SourceType } from '@/types';
+import { sourceTypeLabels } from '@/data/mockSentiments';
+import { exportToCSV } from '@/utils/exportCSV';
 
 type TabType = 'pending' | 'replied' | 'verified' | 'ignored';
 type BriefingPeriod = 'morning' | 'noon' | 'close';
 
 export function DisposalPage() {
-  const sentiments = useSentimentStore((s) => s.sentiments);
+  const sentiments = useSentiments();
   const config = useSentimentStore((s) => s.config);
   const updateSentimentStatus = useSentimentStore((s) => s.updateSentimentStatus);
 
   const [activeTab, setActiveTab] = useState<TabType>('pending');
   const [briefingPeriod, setBriefingPeriod] = useState<BriefingPeriod>('morning');
   const [copied, setCopied] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [levelFilter, setLevelFilter] = useState<SentimentLevel | 'all'>('all');
+  const [sourceFilter, setSourceFilter] = useState<SourceType | 'all'>('all');
 
   const stats = useMemo(() => {
     const all = sentiments;
@@ -47,14 +54,38 @@ export function DisposalPage() {
   ];
 
   const filteredSentiments = useMemo(() => {
-    return sentiments
-      .filter((s) => s.status === activeTab)
-      .sort((a, b) => new Date(b.publishTime).getTime() - new Date(a.publishTime).getTime());
-  }, [sentiments, activeTab]);
+    let result = sentiments.filter((s) => s.status === activeTab);
+
+    if (levelFilter !== 'all') {
+      result = result.filter((s) => s.level === levelFilter);
+    }
+
+    if (sourceFilter !== 'all') {
+      result = result.filter((s) => s.sourceType === sourceFilter);
+    }
+
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(
+        (s) =>
+          s.title.toLowerCase().includes(query) ||
+          s.summary.toLowerCase().includes(query) ||
+          s.matchHits.some((h) => h.keyword.toLowerCase().includes(query)) ||
+          (s.responseNote && s.responseNote.toLowerCase().includes(query))
+      );
+    }
+
+    return result.sort((a, b) => new Date(b.publishTime).getTime() - new Date(a.publishTime).getTime());
+  }, [sentiments, activeTab, searchQuery, levelFilter, sourceFilter]);
 
   const briefingContent = useMemo(() => {
     const today = new Date().toLocaleDateString('zh-CN');
-    return generateBriefing(sentiments, briefingPeriod, config.companyName, today);
+    return generateBriefing({
+      sentiments,
+      period: briefingPeriod,
+      companyName: config.companyName,
+      date: today,
+    });
   }, [sentiments, briefingPeriod, config.companyName]);
 
   const handleCopy = async () => {
@@ -71,17 +102,49 @@ export function DisposalPage() {
     updateSentimentStatus(id, status, note);
   };
 
+  const handleExport = () => {
+    const dateStr = new Date().toLocaleDateString('zh-CN').replace(/\//g, '');
+    const tabLabel = tabs.find((t) => t.key === activeTab)?.label || '全部';
+    exportToCSV(filteredSentiments, `${config.companyName}_处置记录_${tabLabel}_${dateStr}`);
+  };
+
   const periodTabs = [
     { key: 'morning' as const, label: '开盘前', icon: Sun, desc: '08:30 简报' },
     { key: 'noon' as const, label: '午间', icon: Sunset, desc: '12:00 简报' },
     { key: 'close' as const, label: '收盘后', icon: Moon, desc: '15:30 简报' },
   ];
 
+  const levelLabels: Record<string, string> = {
+    all: '全部分级',
+    regulatory: '监管敏感',
+    stock: '股价联动',
+    investor: '投资者提问',
+    general: '普通讨论',
+  };
+
   return (
     <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-xl font-bold text-slate-900">处置记录</h1>
-        <p className="text-sm text-slate-500 mt-1">管理舆情处置状态，生成早会简报</p>
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">处置记录</h1>
+          <p className="text-sm text-slate-500 mt-1">管理舆情处置状态，生成早会简报</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {}}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+          >
+            <RefreshCw className="w-4 h-4" />
+            刷新
+          </button>
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            导出CSV
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-6">
@@ -119,7 +182,51 @@ export function DisposalPage() {
               </div>
             </div>
 
-            <div className="p-4 max-h-[calc(100vh-280px)] overflow-y-auto">
+            <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+              <div className="flex items-center gap-4">
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="搜索标题、内容、命中词或处置口径..."
+                    className="w-full pl-9 pr-4 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Filter className="w-4 h-4 text-slate-400" />
+                  <select
+                    value={levelFilter}
+                    onChange={(e) => setLevelFilter(e.target.value as SentimentLevel | 'all')}
+                    className="text-sm px-3 py-2 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {Object.entries(levelLabels).map(([key, label]) => (
+                      <option key={key} value={key}>{label}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={sourceFilter}
+                    onChange={(e) => setSourceFilter(e.target.value as SourceType | 'all')}
+                    className="text-sm px-3 py-2 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="all">全部来源</option>
+                    {Object.entries(sourceTypeLabels).map(([key, label]) => (
+                      <option key={key} value={key}>{label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {filteredSentiments.length > 0 && filteredSentiments.length !== tabs.find(t => t.key === activeTab)?.count && (
+                <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-200">
+                  <p className="text-xs text-slate-500">
+                    共筛选出 <span className="font-medium text-slate-700">{filteredSentiments.length}</span> 条舆情
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 max-h-[calc(100vh-400px)] overflow-y-auto">
               {filteredSentiments.length > 0 ? (
                 <div className="space-y-3">
                   {filteredSentiments.map((item) => (

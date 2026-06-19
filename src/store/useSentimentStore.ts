@@ -1,73 +1,84 @@
 import { create } from 'zustand';
 import type { CompanyConfig, SentimentItem, DisposalStatus } from '../types';
-import { defaultConfig, mockSentiments } from '../data/mockSentiments';
+import { defaultConfig, rawSentimentPool } from '../data/mockSentiments';
 import { getFromStorage, setToStorage, storage } from '../utils/storage';
+import { matchSentiments, extractPersistedStates } from '../utils/sentimentMatcher';
+
+interface PersistedDisposalState {
+  status: DisposalStatus;
+  responseNote?: string;
+  responseTime?: string;
+  disposalHistory: Array<{
+    status: DisposalStatus;
+    note?: string;
+    operator: string;
+    timestamp: string;
+  }>;
+}
 
 interface SentimentState {
   config: CompanyConfig;
-  sentiments: SentimentItem[];
+  persistedDisposal: Record<string, PersistedDisposalState>;
   setConfig: (config: CompanyConfig) => void;
-  updateSentimentStatus: (id: string, status: DisposalStatus, note?: string) => void;
-  getByLevel: (level: string) => SentimentItem[];
-  getByStatus: (status: DisposalStatus) => SentimentItem[];
-  getPendingCount: () => number;
-  getTodayStats: () => {
-    total: number;
-    regulatory: number;
-    stock: number;
-    investor: number;
-    general: number;
-    replied: number;
-  };
+  getSentiments: () => SentimentItem[];
+  updateSentimentStatus: (id: string, status: DisposalStatus, note?: string, operator?: string) => void;
+  clearDisposalHistory: (id: string) => void;
 }
 
 export const useSentimentStore = create<SentimentState>((set, get) => ({
-  config: getFromStorage(storage.config, defaultConfig),
-  sentiments: getFromStorage(storage.sentiments, mockSentiments),
+  config: getFromStorage(storage.config, defaultConfig as CompanyConfig),
+  persistedDisposal: getFromStorage(storage.sentiments, {}),
 
   setConfig: (config) => {
     set({ config });
     setToStorage(storage.config, config);
   },
 
-  updateSentimentStatus: (id, status, note) => {
+  getSentiments: () => {
+    const { config, persistedDisposal } = get();
+    return matchSentiments(rawSentimentPool, config, persistedDisposal);
+  },
+
+  updateSentimentStatus: (id, status, note, operator = '证代') => {
     set((state) => {
-      const updated = state.sentiments.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              status,
-              responseNote: note ?? item.responseNote,
-              responseTime: new Date().toISOString(),
-            }
-          : item
-      );
-      setToStorage(storage.sentiments, updated);
-      return { sentiments: updated };
+      const existing = state.persistedDisposal[id];
+      const newHistory = [
+        ...(existing?.disposalHistory ?? []),
+        {
+          status,
+          note,
+          operator,
+          timestamp: new Date().toISOString(),
+        },
+      ];
+
+      const newPersisted: Record<string, PersistedDisposalState> = {
+        ...state.persistedDisposal,
+        [id]: {
+          status,
+          responseNote: note ?? existing?.responseNote,
+          responseTime: new Date().toISOString(),
+          disposalHistory: newHistory,
+        },
+      };
+
+      setToStorage(storage.sentiments, newPersisted);
+      return { persistedDisposal: newPersisted };
     });
   },
 
-  getByLevel: (level) => {
-    return get().sentiments.filter((s) => s.level === level);
-  },
-
-  getByStatus: (status) => {
-    return get().sentiments.filter((s) => s.status === status);
-  },
-
-  getPendingCount: () => {
-    return get().sentiments.filter((s) => s.status === 'pending').length;
-  },
-
-  getTodayStats: () => {
-    const all = get().sentiments;
-    return {
-      total: all.length,
-      regulatory: all.filter((s) => s.level === 'regulatory').length,
-      stock: all.filter((s) => s.level === 'stock').length,
-      investor: all.filter((s) => s.level === 'investor').length,
-      general: all.filter((s) => s.level === 'general').length,
-      replied: all.filter((s) => s.status === 'replied' || s.status === 'verified').length,
-    };
+  clearDisposalHistory: (id) => {
+    set((state) => {
+      const newPersisted = { ...state.persistedDisposal };
+      delete newPersisted[id];
+      setToStorage(storage.sentiments, newPersisted);
+      return { persistedDisposal: newPersisted };
+    });
   },
 }));
+
+export function useSentiments(): SentimentItem[] {
+  const config = useSentimentStore((s) => s.config);
+  const persisted = useSentimentStore((s) => s.persistedDisposal);
+  return matchSentiments(rawSentimentPool, config, persisted);
+}

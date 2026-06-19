@@ -1,14 +1,24 @@
 import { useState, useMemo } from 'react';
-import { Search, Filter, AlertTriangle, BarChart3, MessageSquare, FileText } from 'lucide-react';
-import { useSentimentStore } from '@/store/useSentimentStore';
+import {
+  Search,
+  Filter,
+  AlertTriangle,
+  BarChart3,
+  MessageSquare,
+  FileText,
+  Download,
+  RefreshCw,
+} from 'lucide-react';
+import { useSentimentStore, useSentiments } from '@/store/useSentimentStore';
 import { SentimentCard } from '@/components/SentimentCard/SentimentCard';
 import type { SentimentLevel, DisposalStatus, SourceType } from '@/types';
 import { sourceTypeLabels } from '@/data/mockSentiments';
+import { exportToCSV } from '@/utils/exportCSV';
 
 type TabType = 'all' | SentimentLevel;
 
 export function DashboardPage() {
-  const sentiments = useSentimentStore((s) => s.sentiments);
+  const allSentiments = useSentiments();
   const updateSentimentStatus = useSentimentStore((s) => s.updateSentimentStatus);
   const config = useSentimentStore((s) => s.config);
 
@@ -18,7 +28,7 @@ export function DashboardPage() {
   const [statusFilter, setStatusFilter] = useState<DisposalStatus | 'all'>('all');
 
   const stats = useMemo(() => {
-    const all = sentiments;
+    const all = allSentiments;
     return {
       total: all.length,
       regulatory: all.filter((s) => s.level === 'regulatory').length,
@@ -28,7 +38,7 @@ export function DashboardPage() {
       replied: all.filter((s) => s.status === 'replied' || s.status === 'verified').length,
       pending: all.filter((s) => s.status === 'pending').length,
     };
-  }, [sentiments]);
+  }, [allSentiments]);
 
   const tabs: { key: TabType; label: string; count: number; color: string }[] = [
     { key: 'all', label: '全部', count: stats.total, color: 'text-slate-600' },
@@ -39,7 +49,7 @@ export function DashboardPage() {
   ];
 
   const filteredSentiments = useMemo(() => {
-    let result = sentiments;
+    let result = allSentiments;
 
     if (activeTab !== 'all') {
       result = result.filter((s) => s.level === activeTab);
@@ -58,7 +68,8 @@ export function DashboardPage() {
       result = result.filter(
         (s) =>
           s.title.toLowerCase().includes(query) ||
-          s.summary.toLowerCase().includes(query)
+          s.summary.toLowerCase().includes(query) ||
+          s.matchHits.some((h) => h.keyword.toLowerCase().includes(query))
       );
     }
 
@@ -69,10 +80,16 @@ export function DashboardPage() {
       }
       return b.heat - a.heat;
     });
-  }, [sentiments, activeTab, searchQuery, sourceFilter, statusFilter]);
+  }, [allSentiments, activeTab, searchQuery, sourceFilter, statusFilter]);
 
-  const handleAction = (id: string, status: 'replied' | 'verified' | 'ignored', note?: string) => {
+  const handleAction = (id: string, status: DisposalStatus, note?: string) => {
     updateSentimentStatus(id, status, note);
+  };
+
+  const handleExport = () => {
+    const dateStr = new Date().toLocaleDateString('zh-CN').replace(/\//g, '');
+    const tabLabel = tabs.find((t) => t.key === activeTab)?.label || '全部';
+    exportToCSV(filteredSentiments, `${config.companyName}_舆情盯盘_${tabLabel}_${dateStr}`);
   };
 
   const statCards = [
@@ -108,11 +125,31 @@ export function DashboardPage() {
 
   return (
     <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-xl font-bold text-slate-900">舆情盯盘</h1>
-        <p className="text-sm text-slate-500 mt-1">
-          {config.companyName}（{config.stockCode}）舆情实时监控，聚焦高优先级信息
-        </p>
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">舆情盯盘</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            {config.companyName}（{config.stockCode}）· {config.industry} · 已配置
+            {config.coreProducts.length} 个产品、{config.executives.length} 位董监高、
+            {config.commonMisspellings.length} 个误写词
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {}}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+          >
+            <RefreshCw className="w-4 h-4" />
+            刷新
+          </button>
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            导出CSV
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-4 gap-4 mb-6">
@@ -176,7 +213,7 @@ export function DashboardPage() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="搜索舆情标题或内容..."
+                placeholder="搜索标题、内容或命中关键词..."
                 className="w-full pl-9 pr-4 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
@@ -205,6 +242,13 @@ export function DashboardPage() {
               </select>
             </div>
           </div>
+          {filteredSentiments.length > 0 && filteredSentiments.length !== allSentiments.length && (
+            <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-200">
+              <p className="text-xs text-slate-500">
+                共筛选出 <span className="font-medium text-slate-700">{filteredSentiments.length}</span> 条舆情
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="p-4">
@@ -224,6 +268,9 @@ export function DashboardPage() {
                   <Search className="w-8 h-8 text-slate-300" />
                 </div>
                 <p className="text-sm text-slate-500">暂无符合条件的舆情</p>
+                <p className="text-xs text-slate-400 mt-1">
+                  请尝试调整筛选条件，或在设置页配置更多关键词
+                </p>
               </div>
             )}
           </div>
